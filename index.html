@@ -519,9 +519,13 @@ async function handleDoneBtn() {
   stopPlay();
 }
 
-audio.addEventListener('ended', () => {
+audio.addEventListener('ended', async () => {
   clearInterval(timerInterval);
   document.getElementById('prog').style.width = '100%';
+  if (activeDateStr && !done.includes(activeDateStr)) {
+    await addDone(activeDateStr);
+  }
+  setTimeout(() => stopPlay(), 800);
 });
 
 // --- ADMIN ---
