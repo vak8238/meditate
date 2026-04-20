@@ -124,22 +124,28 @@
   }
   .bubble:active { transform: scale(0.88); }
   .bubble.today { border: 2px solid var(--blue); }
-  .bubble.done { background: var(--green); border-color: var(--green-dark); }
+  .bubble.done-meditation { background: #2e7d32; border-color: #1b5e20; }
+  .bubble.done-breathing  { background: #81c784; border-color: #4caf50; }
+  .bubble.done-both       { background: #1a3a1a; border-color: #0a1f0a; }
   .bubble .day-num {
     font-size: clamp(10px, 3vw, 13px);
     font-weight: 500;
     color: var(--text-muted);
     line-height: 1;
   }
-  .bubble.done .day-num { color: #fff; }
-  .bubble.today:not(.done) .day-num { color: var(--blue); }
+  .bubble.done-meditation .day-num,
+  .bubble.done-breathing .day-num,
+  .bubble.done-both .day-num { color: #fff; }
+  .bubble.today:not(.done-meditation):not(.done-breathing):not(.done-both) .day-num { color: var(--blue); }
   .bubble .month-tag {
     font-size: 8px;
     color: var(--text-muted);
     opacity: 0.7;
     margin-top: 1px;
   }
-  .bubble.done .month-tag { color: rgba(255,255,255,0.75); }
+  .bubble.done-meditation .month-tag,
+  .bubble.done-breathing .month-tag,
+  .bubble.done-both .month-tag { color: rgba(255,255,255,0.75); }
 
   /* PLAYER */
   .player {
@@ -350,7 +356,7 @@ let currentTrack = 'A';
 let activeDateStr = null;
 let activeDateObj = null;
 let timerInterval = null;
-let done = [];
+let done = {};
 
 const audio = document.getElementById('audio');
 const today = new Date(); today.setHours(0,0,0,0);
@@ -375,38 +381,45 @@ async function sbFetch(path, opts={}) {
 
 async function loadDone() {
   try {
-    const res = await sbFetch('completions?select=date');
+    const res = await sbFetch('completions?select=date,source');
     const data = await res.json();
-    done = data.map(r => r.date);
+    done = {};
+    data.forEach(r => {
+      if (!done[r.date]) done[r.date] = [];
+      done[r.date].push(r.source || 'meditation');
+    });
     buildGrid();
-    document.getElementById('streak-label').textContent = done.length + ' done';
+    const count = Object.keys(done).length;
+    document.getElementById('streak-label').textContent = count + ' done';
   } catch(e) {
-    // fallback to localStorage
-    done = JSON.parse(localStorage.getItem('done')||'[]');
+    const arr = JSON.parse(localStorage.getItem('done')||'[]');
+    done = {};
+    arr.forEach(d => { done[d] = ['meditation']; });
     buildGrid();
   }
 }
 
 async function addDone(ds) {
-  done.push(ds);
-  localStorage.setItem('done', JSON.stringify(done));
+  if (!done[ds]) done[ds] = [];
+  if (!done[ds].includes('meditation')) done[ds].push('meditation');
+  localStorage.setItem('done', JSON.stringify(Object.keys(done)));
   buildGrid();
-  document.getElementById('streak-label').textContent = done.length + ' done';
+  document.getElementById('streak-label').textContent = Object.keys(done).length + ' done';
   try {
     await sbFetch('completions', {
       method: 'POST',
-      body: JSON.stringify({ date: ds })
+      body: JSON.stringify({ date: ds, source: 'meditation' })
     });
   } catch(e) {}
 }
 
 async function removeDone(ds) {
-  done = done.filter(d => d !== ds);
-  localStorage.setItem('done', JSON.stringify(done));
+  delete done[ds];
+  localStorage.setItem('done', JSON.stringify(Object.keys(done)));
   buildGrid();
-  document.getElementById('streak-label').textContent = done.length + ' done';
+  document.getElementById('streak-label').textContent = Object.keys(done).length + ' done';
   try {
-    await sbFetch(`completions?date=eq.${ds}`, { method: 'DELETE' });
+    await sbFetch(`completions?date=eq.${ds}&source=eq.meditation`, { method: 'DELETE' });
   } catch(e) {}
 }
 
@@ -448,7 +461,11 @@ function buildGrid() {
     const d = new Date(today); d.setDate(today.getDate() - i);
     const ds = dateStr(d);
     const el = document.createElement('div');
-    el.className = 'bubble' + (done.includes(ds) ? ' done' : '') + (ds === todayStr ? ' today' : '');
+    const sources = done[ds] || [];
+    const hasMed = sources.includes('meditation');
+    const hasBre = sources.includes('breathing');
+    const doneClass = hasMed && hasBre ? ' done-both' : hasMed ? ' done-meditation' : hasBre ? ' done-breathing' : '';
+    el.className = 'bubble' + doneClass + (ds === todayStr ? ' today' : '');
     const num = document.createElement('div');
     num.className = 'day-num';
     num.textContent = d.getDate();
@@ -471,7 +488,7 @@ function openDay(ds, d) {
   activeDateObj = d;
   clearInterval(timerInterval);
 
-  const isDone = done.includes(ds);
+  const isDone = !!(done[ds] && done[ds].includes('meditation'));
   const doneBtn = document.getElementById('done-btn');
   doneBtn.textContent = isDone ? '↩ Undo' : '✓ Done';
   doneBtn.classList.toggle('undo', isDone);
@@ -511,7 +528,7 @@ function stopPlay() {
 
 async function handleDoneBtn() {
   if (!activeDateStr) return;
-  const isDone = done.includes(activeDateStr);
+  const isDone = !!(done[activeDateStr] && done[activeDateStr].includes('meditation'));
   if (isDone) {
     await removeDone(activeDateStr);
   } else {
@@ -523,7 +540,7 @@ async function handleDoneBtn() {
 audio.addEventListener('ended', async () => {
   clearInterval(timerInterval);
   document.getElementById('prog').style.width = '100%';
-  if (activeDateStr && !done.includes(activeDateStr)) {
+  if (activeDateStr && !(done[activeDateStr] && done[activeDateStr].includes('meditation'))) {
     await addDone(activeDateStr);
   }
   setTimeout(() => stopPlay(), 800);
