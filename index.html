@@ -495,7 +495,15 @@ function openDay(ds, d) {
 
   audio.src = tracks[currentTrack].url;
   audio.currentTime = 0;
+  audio.volume = 0;
   audio.play().catch(() => {});
+  // Fade in over 20s, cap at 0.7
+  const _fadeStart = Date.now();
+  const _fi = setInterval(() => {
+    const t = (Date.now() - _fadeStart) / 20000;
+    if (t >= 1) { audio.volume = 0.7; clearInterval(_fi); return; }
+    audio.volume = t * 0.7;
+  }, 100);
 
   const opts = {weekday: 'short', month: 'short', day: 'numeric'};
   document.getElementById('player-date').textContent = d.toLocaleDateString(undefined, opts);
